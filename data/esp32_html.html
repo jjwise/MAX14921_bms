@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        th, td, p, input {
+            font:14px Verdana;
+        }
+        table, th, td 
+        {
+            border: solid 1px #DDD;
+            border-collapse: collapse;
+            padding: 2px 3px;
+            text-align: center;
+        }
+        th {
+            font-weight:bold;
+        }
+    </style>
+    <script src="jquery-1.11.3.min.js"></script>
+    <script src="jquery.mobile-1.4.5.min.js"></script>
+    <script>
+        "use strict";
+        var ws;
+        var data;
+        $(document).ready(function() {
+            // create websocket instance
+            ws = new WebSocket('ws://' + location.hostname + '/ws', ['arduino']);
+
+            // Handle incoming websocket message callback
+            ws.onmessage = function(evt) {
+                console.log("Message Received: " + evt.data);
+                data = JSON.parse(evt.data);
+                console.log(data)
+                CreateTableFromJSON();
+            };
+
+            // Close Websocket callback
+            ws.onclose = function(evt) {
+                console.log("***Connection Closed***");
+                alert("Connection closed");
+
+            };
+
+            // Open Websocket callback
+            ws.onopen = function(evt) {
+                console.log("***Connection Opened***");
+            };
+        });
+
+        function CreateTableFromJSON() {
+            ws.send("hello");
+            // EXTRACT VALUE FOR HTML HEADER. 
+            // ('Book ID', 'Book Name', 'Category' and 'Price')
+            var cols = ["Cell Number", "Cell Voltage"];
+
+            // CREATE DYNAMIC TABLE.
+            var table = document.createElement("table");
+
+            // CREATE HTML TABLE HEADER ROW USING THE EXTRACTED HEADERS ABOVE.
+
+            var tr = table.insertRow(-1);                   // TABLE ROW.
+
+            for (var i = 0; i < cols.length; i++) {
+                var th = document.createElement("th");      // TABLE HEADER.
+                th.innerHTML = cols[i];
+                tr.appendChild(th);
+            }
+
+            // ADD JSON DATA TO THE TABLE AS ROWS.
+            for (var i = 0; i < data.length - 1; i++) {
+                tr = table.insertRow(-1);
+                
+                var tabCell = tr.insertCell(-1);
+                tabCell.innerHTML = i;
+                var tabCell = tr.insertCell(-1);
+                tabCell.innerHTML = data[i];
+            }
+
+            // FINALLY ADD THE NEWLY CREATED TABLE WITH JSON DATA TO A CONTAINER.
+            var divContainer = document.getElementById("voltage");
+            divContainer.innerHTML = "";
+            divContainer.appendChild(table);
+
+            //insert current
+            document.getElementById("current").innerHTML = "Current: " + data.at(-1);
+    }
+
+    </script>
+</head>
+<body>
+    <table>
+        <tr>
+            <td id="voltage"></td>
+            <td id="current"></td>
+        </tr>
+    </table>
+</body>
+
+</html>
