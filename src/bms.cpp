@@ -30,17 +30,26 @@ const char *ssid = "Ute";
 const char *password = NULL;
 const int SHUNT_RESISTANCE = 150; //in u ohms
 const size_t CAPACITY = JSON_ARRAY_SIZE(NUM_CELLS * 2 + 1);
+const int8_t STATE = 0;
 
-enum {DRIVING, CHARGING, STANDBY};
+enum {DRIVING = 1, CHARGING = 2, STANDBY = 3};
 
 float measure_current() {
     //read adc voltage at current sense pin, convert to current
     //use instance of adc associated with corect address
     long adc_value = shunt_adc.readADC_Differential_2_3();
-    Serial.println(adc_value);
     float current = to_voltage(adc_value) / SHUNT_RESISTANCE * 1000000 / AMP_GAIN; // some maths
 
     return current;
+}
+
+//truncates float to specified width and dp, returns char pointer
+char * truncate_float(size_t width, uint8_t dp, float num) {
+    //use malloc cuase I can, static memory allocation is lame
+    float rounded_num = round(num * pow(10, dp)) / pow(10, dp);
+    char* temp_buff = (char *)malloc(width + 1); //allow for null byte
+    snprintf(temp_buff, width + 1, "%*f", width, rounded_num); 
+    return temp_buff;
 }
 
 
@@ -51,15 +60,22 @@ void sendMessage() {
     //populate array with cell voltages
     for(int j = 0; j < NUM_PACKS; j++) {
         for(int i = 0; i < NUM_CELLS; i++) {
-            cell_array.add(max14921.get_cell_voltage(j, i));
+
+            float cell_voltage = max14921.get_cell_voltage(j, i);
+            char *truncated_cell_voltage = truncate_float(4, 2, cell_voltage); 
+            cell_array.add(truncated_cell_voltage);
+
+            free(truncated_cell_voltage);
         }
     }
 
     float current = measure_current();
-    cell_array.add(current);
-
+    char *truncated_current = truncate_float(7, 2, current); 
+    cell_array.add(truncated_current);
+    free(truncated_current);
+    
     //don't actually need 200 chars, more like 128
-    char buff[200];
+    char buff[300];
     serializeJson(doc, buff);
     
     //send char array over websockets
@@ -119,7 +135,12 @@ void setup() {
     server.addHandler(&ws);
     server.addHandler(&events);
 
-    server.serveStatic("/", SPIFFS, "/").setDefaultFile("esp32_html.html");
+    server.serveStatic("/", SPIFFS, "/").setDefaultFile("bms_data.html");
+
+
+    server.on("/styleSheet.css", HTTP_GET, [](AsyncWebServerRequest *request){
+        request->send(SPIFFS, "/styleSheet.css", "text/css");
+    });
 
     server.on("/jquery-1.11.3.min.js", HTTP_GET, [](AsyncWebServerRequest *request){
         request->send(SPIFFS, "/jquery-1.11.3.min.js", "text/javascript");
@@ -141,9 +162,15 @@ void setup() {
 //give caps some time to settle at cell voltage, 500ms is definitely too much
 //read voltages and send to client over websockets
 void loop() {
+    if(STATE == DRIVING) {
+
+    } else if (STATE == CHARGING) {
+
+    } else if (STATE == STANDBY) {
+
+    }
     max14921.record_cell_voltages();
     float pack_voltage = max14921.get_pack_voltage();
-    Serial.println(pack_voltage);
 
     int battery_percent = voltage_to_percentage(pack_voltage);
     set_battery_guage(battery_percent);

@@ -21,7 +21,7 @@ and pack voltages, interfacing with the max14921 over spi and balancing cells
 #define ADC_CONST 6.144 * 2 / pow(2, 16)
 #define NUM_PACKS 2
 
-const int ADC_ADDR[NUM_PACKS] = {0x49, 0x48};
+const int ADC_ADDR[NUM_PACKS] = {0x48, 0x48};
 const float CELL_THRESH_UPPER = 4.15;
 const int SPI_MAX_RATE = 1000000;
 const int8_t NUM_CELLS = 15;

@@ -1,0 +1,53 @@
+body{
+    /*background-color: #DCDCDC;*/
+}
+
+div{
+    text-align: center;
+}
+
+h1{
+    text-align: center;
+}
+
+table.gridTable{
+     border-spacing: 20px;
+     border-collapse: separate;
+}
+
+table.gridTable td{
+    border-radius: 5px;
+    background-color: #f5f5f5;
+}
+
+th{
+    text-align: center;
+    font-family: verdana;
+}
+
+td{
+    text-align: center;
+    font-family: verdana;
+}
+
+label{
+    font-family: verdana;
+    font-size: 17px;
+}
+
+form{
+    text-align: center;
+    font-family: verdana;
+}
+
+input[type=submit], button{
+    display: block;
+    display: inline-block;
+    border-radius: 5px;
+    border: 0;
+    /*width: 100px;*/
+    height:35px;
+    font-family: verdana;
+    font-size: 15px;
+    background: #f4f4f4;
+}
