@@ -12,6 +12,8 @@
 #include <ArduinoJson.h>
 #include <fuel_guage.h>
 #include <MAX14921.h>
+#include <CAN.h>
+#include <CAN_evcc.h>
 
 #define AMP_GAIN 80
 #define MAX_CS1 27
@@ -24,12 +26,15 @@ AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 AsyncEventSource events("/events");
 Adafruit_ADS1115 shunt_adc;
+//instance of max14921 supports two 15 cell packs
 MAX14921 max14921(MAX_CS1, MAX_CS2, MAX_EN1, MAX_EN2);
+bms_status_t bms_status;
+
 
 const char *ssid = "Ute";
 const char *password = NULL;
 const int SHUNT_RESISTANCE = 150; //in u ohms
-const size_t CAPACITY = JSON_ARRAY_SIZE(NUM_CELLS * 2 + 1);
+const size_t CAPACITY = JSON_ARRAY_SIZE(NUM_CELLS * 3);
 const int8_t STATE = 0;
 
 enum {DRIVING = 1, CHARGING = 2, STANDBY = 3};
@@ -53,7 +58,7 @@ char * truncate_float(size_t width, uint8_t dp, float num) {
 }
 
 
-void sendMessage() {
+void send_data_ws() {
     StaticJsonDocument<CAPACITY> doc;
     JsonArray cell_array = doc.to<JsonArray>();
 
@@ -101,11 +106,11 @@ void webSocketEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsE
         case WS_EVT_PONG:
             //pong message was received (in response to a ping request maybe)
             Serial.printf("ws[%s][%u] pong[%u]: %s\n", server->url(), client->id(), len, (len)?(char*)payload:"");
-            //sendMessage();
+            //send_data_ws();
             break;
         case WS_EVT_DATA:
             Serial.println("request recieved");
-            //sendMessage();
+            //send_data_ws();
     }
 }
 
@@ -116,6 +121,13 @@ void setup() {
     SPI.begin();//sets cs to output and pull high
     max14921.begin();
     shunt_adc.begin(SHUNT_ADC_ADDR);
+
+    if (!CAN.begin(CAN_RATE)) {
+        Serial.println("Starting CAN failed!");
+        while (1);
+    }
+
+    CAN.setPins(CAN_RX, CAN_TX); //rx tx
 
     ledcSetup(CHANNEL, FREQ, RESOLUTION);
     ledcAttachPin(GUAGE_PIN, CHANNEL);
@@ -175,7 +187,15 @@ void loop() {
     int battery_percent = voltage_to_percentage(pack_voltage);
     set_battery_guage(battery_percent);
 
-    sendMessage();
+    //balance cells to avoid individual cell overcharging
+    max14921.balance_cells();
+
+    //send bms data to client through websocket
+    send_data_ws();
+
+    //send can message at least once a second, do it twice to be sure
+    set_bms_status(&bms_status, &max14921);
+    send_can_evcc(&bms_status);
     
     delay(2000);
 }

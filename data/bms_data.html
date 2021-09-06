@@ -78,6 +78,7 @@
             }
 
             // FINALLY ADD THE NEWLY CREATED TABLE WITH JSON DATA TO A CONTAINER.
+            table.classList.add("data");
             var divContainer = document.getElementById("voltage");
             divContainer.innerHTML = "";
             divContainer.appendChild(table);
@@ -89,7 +90,7 @@
     </script>
 </head>
 <body>
-    <table align="center" border="1" cellpadding="15" cellspacing="0" style="border-collapse: collapse;">
+    <table class="main">
         <tr>
             <td id="voltage"></td>
             <td id="current"></td>

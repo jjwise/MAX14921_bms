@@ -12,7 +12,7 @@ Functions for using the oem Hilux fuel guage as a battery guage
 #define B 0.001649
 #define C -25.79
 #define D -0.02403
-#define GUAGE_PIN 10 //change
+#define GUAGE_PIN 14 //currently using TMS pin
 
 const int FREQ = 5000;
 const int CHANNEL = 0;

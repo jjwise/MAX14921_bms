@@ -23,6 +23,7 @@ and pack voltages, interfacing with the max14921 over spi and balancing cells
 
 const int ADC_ADDR[NUM_PACKS] = {0x48, 0x48};
 const float CELL_THRESH_UPPER = 4.15;
+const float CELL_THRESH_LOWER = 3.4;
 const int SPI_MAX_RATE = 1000000;
 const int8_t NUM_CELLS = 15;
 const int8_t CELL_SETTLING = 60;
@@ -43,6 +44,10 @@ class MAX14921 {
         void record_cell_voltages();
         float get_pack_voltage();
         float get_cell_voltage(uint8_t pack, uint8_t cell);
+        uint8_t over_voltage();
+        uint8_t under_voltage();
+        uint8_t balancing();
+        uint8_t over_temp();
     private:
         Adafruit_ADS1115 ads1115[NUM_PACKS];
         ShiftRegister74HC595<1> sr = ShiftRegister74HC595<1>(SRLATCH, SRCLOCK, SRDATA);

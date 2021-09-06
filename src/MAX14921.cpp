@@ -79,6 +79,44 @@ float MAX14921::get_pack_voltage() {
     return total_pack_voltage;
 }
 
+uint8_t MAX14921::over_voltage() {
+    for(int i = 0; i < NUM_PACKS; i++) {
+        for(int j = 0; j < NUM_CELLS; j++) {
+            if (pack_data[i].cell_voltages[j] > CELL_THRESH_UPPER){
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+uint8_t MAX14921::under_voltage() {
+    for(int i = 0; i < NUM_PACKS; i++) {
+        for(int j = 0; j < NUM_CELLS; j++) {
+            if (pack_data[i].cell_voltages[j] < CELL_THRESH_LOWER){
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+
+uint8_t MAX14921::balancing() {
+    for(int i = 0; i < NUM_PACKS; i++) {
+        if (pack_data[i].cell_balance > 0){
+            return 1;
+        }
+    }
+}
+
+
+uint8_t MAX14921::over_temp() {
+    //add content when temp sensors added
+    return 0;
+}
+
+
 void MAX14921::balance_cells() {
     //balances cells if a cell crosses the set threshold voltage (4.15V)
     //uses previously calculated cell voltages to determine if a particular cell needs to be blanced
@@ -94,6 +132,7 @@ void MAX14921::balance_cells() {
         for(int j = 0; j < NUM_CELLS; j++) {
             pack_data[i].cell_balance |= pack_data[i].cell_balancing[j] << j;
         }
+        //set balance to true if either pack needs balancing
         spiTransfer24(pack_data[i].cs, pack_data[i].cell_balance, 0x00, 0x00);
     }
 }

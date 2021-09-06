@@ -20,6 +20,18 @@ table.gridTable td{
     background-color: #f5f5f5;
 }
 
+table.main{
+    border: none;
+}
+
+table.main td{
+    border: none;
+}
+
+table.main th{
+    border: none;
+}
+
 th{
     text-align: center;
     font-family: verdana;
@@ -27,6 +39,7 @@ th{
 
 td{
     text-align: center;
+    vertical-align: top;
     font-family: verdana;
 }
 
