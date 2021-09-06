@@ -8,10 +8,12 @@ and pack voltages, interfacing with the max14921 over spi and balancing cells
 #include <SPI.h>
 #include <Adafruit_ADS1X15.h>
 #include <ShiftRegister74HC595.h>
+#include <CircularBuffer.h>
 
 float to_voltage(int adc_val) {
     return (float)adc_val * ADC_CONST;
 }
+
 
 MAX14921::MAX14921(uint8_t cs1, uint8_t cs2, uint8_t en1, uint8_t en2) {
     pack_data[0].cs = cs1;
@@ -35,6 +37,23 @@ void MAX14921::begin() {
         sr.set(pack_data[i].en, HIGH);
     }
 }
+
+
+void MAX14921::moving_average() {
+    //moving average filter is the best filter imo.
+    //maybe could do a cheaky digital low pass filter?
+    for(int i = 0; i < NUM_PACKS; i++) {
+        for(int j = 0; j < NUM_CELLS; j++) {
+            float cell_average = 0;
+            for(int m = 0; m < CIRC_BUFF_LEN; m++) {
+                cell_average += pack_data[i].cell_voltages[j][m];
+            }
+            cell_average /= CIRC_BUFF_LEN;
+            pack_data[i].cell_average_voltages[j] = cell_average;
+        }
+    }
+}
+
 
 long MAX14921::spiTransfer24(int cs_pin, uint8_t byte1, uint8_t byte2, uint8_t byte3) {
     //transfer 24 bits to MAX14921 over spi
@@ -79,10 +98,12 @@ float MAX14921::get_pack_voltage() {
     return total_pack_voltage;
 }
 
+
+//checks if any cell in pack is over the thresh voltage
 uint8_t MAX14921::over_voltage() {
     for(int i = 0; i < NUM_PACKS; i++) {
         for(int j = 0; j < NUM_CELLS; j++) {
-            if (pack_data[i].cell_voltages[j] > CELL_THRESH_UPPER){
+            if (pack_data[i].cell_average_voltages[j] > CELL_THRESH_UPPER){
                 return 1;
             }
         }
@@ -90,10 +111,12 @@ uint8_t MAX14921::over_voltage() {
     return 0;
 }
 
+
+//checks if any cell in pack is under the thresh voltage
 uint8_t MAX14921::under_voltage() {
     for(int i = 0; i < NUM_PACKS; i++) {
         for(int j = 0; j < NUM_CELLS; j++) {
-            if (pack_data[i].cell_voltages[j] < CELL_THRESH_LOWER){
+            if (pack_data[i].cell_average_voltages[j] < CELL_THRESH_LOWER){
                 return 1;
             }
         }
@@ -102,15 +125,17 @@ uint8_t MAX14921::under_voltage() {
 }
 
 
+//checks to see if any cell in pack needs balancing
 uint8_t MAX14921::balancing() {
     for(int i = 0; i < NUM_PACKS; i++) {
         if (pack_data[i].cell_balance > 0){
             return 1;
         }
     }
+    return 0;
 }
 
-
+////checks if any of the thermistor readings are over temperature
 uint8_t MAX14921::over_temp() {
     //add content when temp sensors added
     return 0;
@@ -122,7 +147,7 @@ void MAX14921::balance_cells() {
     //uses previously calculated cell voltages to determine if a particular cell needs to be blanced
     for(int i = 0; i < NUM_PACKS; i++) {
         for(int j = 0; j < NUM_CELLS; j++) {
-            if (pack_data[i].cell_voltages[j] >= CELL_THRESH_UPPER) {
+            if (pack_data[i].cell_average_voltages[j] >= CELL_THRESH_UPPER) {
                 pack_data[i].cell_balancing[j] = 1;
             } else {
                 pack_data[i].cell_balancing[j] = 0;
@@ -161,7 +186,7 @@ void MAX14921::record_cell_voltages() {
             
             long return_data = spiTransfer24(pack_data[i].cs, pack_data[i].cell_balance, 0x00, cell_select);
             delayMicroseconds(10);
-            int16_t aout = ads1115[0].readADC_SingleEnded(0);
+            int16_t adc_val = ads1115[0].readADC_SingleEnded(0);
             //Serial.println(return_data);
 
             if(return_data & 0xFF) {
@@ -169,12 +194,15 @@ void MAX14921::record_cell_voltages() {
             }
 
             //turn float voltage into truncated char array
-            float cell_voltage = to_voltage(aout);
-            pack_data[i].cell_voltages[cell_num] = cell_voltage;
+            float cell_voltage = to_voltage(adc_val);
+            pack_data[i].cell_voltages[cell_num].push(cell_voltage);
         }
     }
+
+    //update values in cell average array
+    moving_average();
 }
 
 float MAX14921::get_cell_voltage(uint8_t pack, uint8_t cell) {
-    return pack_data[pack].cell_voltages[cell];
+    return pack_data[pack].cell_average_voltages[cell];
 }

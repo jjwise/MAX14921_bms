@@ -25,7 +25,7 @@ void set_bms_status(bms_status_t *bms_status, MAX14921 *max14921) {
 }
 
 void send_can_evcc(bms_status_t *bms_status) {
-    Serial.print("Sending extended packet ... ");
+    Serial.println("Sending extended data packet to evcc");
 
     //29 bit address
     CAN.beginExtendedPacket(BMS_EVCC_STATUS_IND);

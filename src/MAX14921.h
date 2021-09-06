@@ -8,6 +8,7 @@ and pack voltages, interfacing with the max14921 over spi and balancing cells
 
 #include <Adafruit_ADS1X15.h>
 #include <ShiftRegister74HC595.h>
+#include <CircularBuffer.h>
 
 #define MOSI 11 
 #define MISO 23    
@@ -20,6 +21,7 @@ and pack voltages, interfacing with the max14921 over spi and balancing cells
 #define SPI_MODE SPI_MODE0
 #define ADC_CONST 6.144 * 2 / pow(2, 16)
 #define NUM_PACKS 2
+#define CIRC_BUFF_LEN 20
 
 const int ADC_ADDR[NUM_PACKS] = {0x48, 0x48};
 const float CELL_THRESH_UPPER = 4.15;
@@ -29,7 +31,8 @@ const int8_t NUM_CELLS = 15;
 const int8_t CELL_SETTLING = 60;
 
 typedef struct {
-    float cell_voltages[NUM_CELLS];
+    float cell_average_voltages[NUM_CELLS];
+    CircularBuffer<float, CIRC_BUFF_LEN> cell_voltages[NUM_CELLS];
     int cell_balancing[NUM_CELLS];
     int cell_balance = 0;
     uint8_t en;
@@ -54,6 +57,7 @@ class MAX14921 {
         float total_pack_voltage;
         pack_data_t pack_data[NUM_PACKS];
         long spiTransfer24(int cs_pin, uint8_t byte1, uint8_t byte2, uint8_t byte3);
+        void moving_average();
 };
 
 float to_voltage(int adc_val);
