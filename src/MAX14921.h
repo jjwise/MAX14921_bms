@@ -52,6 +52,8 @@ class MAX14921 {
         uint8_t under_voltage();
         uint8_t balancing();
         uint8_t over_temp();
+        void sleep();
+        void wake();
     private:
         Adafruit_ADS1115 ads1115[NUM_PACKS];
         ShiftRegister74HC595<1> sr = ShiftRegister74HC595<1>(SRLATCH, SRCLOCK, SRDATA);

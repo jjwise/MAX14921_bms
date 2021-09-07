@@ -39,6 +39,20 @@ void MAX14921::begin() {
 }
 
 
+void MAX14921::sleep() {
+    for(int i = 0; i < NUM_PACKS; i++){
+        sr.set(pack_data[i].en, LOW);
+    }
+}
+
+
+void MAX14921::wake() {
+    for(int i = 0; i < NUM_PACKS; i++){
+        sr.set(pack_data[i].en, HIGH);
+    }
+}
+
+
 void MAX14921::update_cell_average() {
     //moving average filter is the best filter imo.
     //maybe could do a cheaky digital low pass filter?

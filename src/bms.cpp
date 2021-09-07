@@ -21,8 +21,8 @@
 #define MAX_EN1 2
 #define MAX_EN2 3
 #define SHUNT_ADC_ADDR 0x4B
-#define IGNITION_PIN 12 //change this
-#define PROXIMITY_PIN 13 //change this
+#define IGNITION_PIN 12 //also tdi
+#define PROXIMITY_PIN 13 //also tck
 
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
@@ -31,7 +31,6 @@ Adafruit_ADS1115 shunt_adc;
 //instance of max14921 supports two 15 cell packs
 MAX14921 max14921(MAX_CS1, MAX_CS2, MAX_EN1, MAX_EN2);
 bms_status_t bms_status;
-
 
 const char *ssid = "Ute";
 const char *password = NULL;
@@ -44,21 +43,30 @@ enum state{DRIVING, CHARGING, STANDBY} STATE;
 //changes state from standby->driving, driving->standby or charging->driving
 void ignition_interrupt() {
     uint8_t ignition_state = digitalRead(IGNITION_PIN);
+    Serial.printf("State change: %d -> ", STATE);
     if(ignition_state) {
         STATE = DRIVING;
+        max14921.wake();
     } else {
         STATE = STANDBY;
+        max14921.sleep();
     }
+    Serial.println(STATE);
 }
 
 //j1772 charger is pluged in and on
 void proximity_interrupt() {
     uint8_t proximity_state = digitalRead(PROXIMITY_PIN);
+
+    Serial.printf("State change: %d -> ", STATE);
     if(proximity_state) {
         STATE = CHARGING;
+        max14921.wake();
     } else {
         STATE = STANDBY;
+        max14921.sleep();
     }
+    Serial.println(STATE);
 }
 
 float measure_current() {
@@ -195,25 +203,25 @@ void setup() {
     server.begin(); 
 
     STATE = STANDBY;
+    max14921.sleep();
 }
-
 
 //put max14921 into smaple phase
 //give caps some time to settle at cell voltage, 500ms is definitely too much
 //read voltages and send to client over websockets
 void loop() {
     float pack_voltage = 0;
-    switch(STATE) {
-        case STANDBY: {
-            //low power mode
 
-        } break;
-        default: {
-            pack_voltage = max14921.get_pack_voltage();
-            max14921.record_cell_voltages();
-            //send bms data to client through websocket
-            send_data_ws();
-        }
+    if (STATE == DRIVING || STATE == CHARGING) {
+        pack_voltage = max14921.get_pack_voltage();
+        max14921.record_cell_voltages();
+        //send bms data to client through websocket
+        send_data_ws();
+        Serial.println("hello");
+    }
+    
+    //is there a way to combine if above ^ with switch below??
+    switch(STATE) {
         case DRIVING: {
             int battery_percent = voltage_to_percentage(pack_voltage);
             set_battery_guage(battery_percent);
@@ -223,6 +231,9 @@ void loop() {
             max14921.balance_cells();
             set_bms_status(&bms_status, &max14921);
             send_can_evcc(&bms_status);
+        } break;
+        case STANDBY: {
+            //low power mode
         } break;
     }
 
