@@ -21,6 +21,8 @@
 #define MAX_EN1 2
 #define MAX_EN2 3
 #define SHUNT_ADC_ADDR 0x4B
+#define IGNITION_PIN 12 //change this
+#define PROXIMITY_PIN 13 //change this
 
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
@@ -35,9 +37,29 @@ const char *ssid = "Ute";
 const char *password = NULL;
 const int SHUNT_RESISTANCE = 150; //in u ohms
 const size_t CAPACITY = JSON_ARRAY_SIZE(NUM_CELLS * 3);
-const int8_t STATE = 0;
 
-enum {DRIVING = 1, CHARGING = 2, STANDBY = 3};
+enum state{DRIVING, CHARGING, STANDBY} STATE;
+
+//isr run when there is a change on the ignition pin
+//changes state from standby->driving, driving->standby or charging->driving
+void ignition_interrupt() {
+    uint8_t ignition_state = digitalRead(IGNITION_PIN);
+    if(ignition_state) {
+        STATE = DRIVING;
+    } else {
+        STATE = STANDBY;
+    }
+}
+
+//j1772 charger is pluged in and on
+void proximity_interrupt() {
+    uint8_t proximity_state = digitalRead(PROXIMITY_PIN);
+    if(proximity_state) {
+        STATE = CHARGING;
+    } else {
+        STATE = STANDBY;
+    }
+}
 
 float measure_current() {
     //read adc voltage at current sense pin, convert to current
@@ -129,6 +151,10 @@ void setup() {
 
     CAN.setPins(CAN_RX, CAN_TX); //rx tx
 
+    //interrupts on pins for state changes
+    attachInterrupt(IGNITION_PIN, ignition_interrupt, CHANGE);
+    attachInterrupt(PROXIMITY_PIN, proximity_interrupt, CHANGE);
+
     ledcSetup(CHANNEL, FREQ, RESOLUTION);
     ledcAttachPin(GUAGE_PIN, CHANNEL);
 
@@ -167,6 +193,8 @@ void setup() {
     });
 
     server.begin(); 
+
+    STATE = STANDBY;
 }
 
 
@@ -174,28 +202,30 @@ void setup() {
 //give caps some time to settle at cell voltage, 500ms is definitely too much
 //read voltages and send to client over websockets
 void loop() {
-    if(STATE == DRIVING) {
+    float pack_voltage = 0;
+    switch(STATE) {
+        case STANDBY: {
+            //low power mode
 
-    } else if (STATE == CHARGING) {
-
-    } else if (STATE == STANDBY) {
-
+        } break;
+        default: {
+            pack_voltage = max14921.get_pack_voltage();
+            max14921.record_cell_voltages();
+            //send bms data to client through websocket
+            send_data_ws();
+        }
+        case DRIVING: {
+            int battery_percent = voltage_to_percentage(pack_voltage);
+            set_battery_guage(battery_percent);
+        } break;
+        case CHARGING: {
+            //balance cells to avoid individual cell overcharging
+            max14921.balance_cells();
+            set_bms_status(&bms_status, &max14921);
+            send_can_evcc(&bms_status);
+        } break;
     }
-    max14921.record_cell_voltages();
-    float pack_voltage = max14921.get_pack_voltage();
-
-    int battery_percent = voltage_to_percentage(pack_voltage);
-    set_battery_guage(battery_percent);
-
-    //balance cells to avoid individual cell overcharging
-    max14921.balance_cells();
-
-    //send bms data to client through websocket
-    send_data_ws();
 
     //send can message at least once a second, do it twice to be sure
-    set_bms_status(&bms_status, &max14921);
-    send_can_evcc(&bms_status);
-    
-    delay(500);
+    delay(250);
 }
