@@ -197,5 +197,5 @@ void loop() {
     set_bms_status(&bms_status, &max14921);
     send_can_evcc(&bms_status);
     
-    delay(2000);
+    delay(500);
 }

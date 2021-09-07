@@ -20,7 +20,7 @@ MAX14921::MAX14921(uint8_t cs1, uint8_t cs2, uint8_t en1, uint8_t en2) {
     pack_data[1].cs = cs2;
     pack_data[0].en = en1;
     pack_data[1].en = en2;
-    total_pack_voltage = 0;
+    average_pack_voltage = 0;
 }
 
 void MAX14921::begin() {
@@ -39,19 +39,32 @@ void MAX14921::begin() {
 }
 
 
-void MAX14921::moving_average() {
+void MAX14921::update_cell_average() {
     //moving average filter is the best filter imo.
     //maybe could do a cheaky digital low pass filter?
     for(int i = 0; i < NUM_PACKS; i++) {
         for(int j = 0; j < NUM_CELLS; j++) {
             float cell_average = 0;
-            for(int m = 0; m < CIRC_BUFF_LEN; m++) {
+            int len = pack_data[i].cell_voltages[j].size();
+            for(int m = 0; m < len; m++) {
                 cell_average += pack_data[i].cell_voltages[j][m];
             }
-            cell_average /= CIRC_BUFF_LEN;
+            cell_average /= len;
             pack_data[i].cell_average_voltages[j] = cell_average;
         }
     }
+}
+
+
+void MAX14921::update_pack_average() {
+    //moving average filter is the best filter imo.
+    //maybe could do a cheaky digital low pass filter?
+    average_pack_voltage = 0;
+    int len = total_pack_voltages.size();
+    for(int i = 0; i < len; i++) {
+        average_pack_voltage += total_pack_voltages[i];
+    }
+    average_pack_voltage /= len;
 }
 
 
@@ -83,10 +96,10 @@ long MAX14921::spiTransfer24(int cs_pin, uint8_t byte1, uint8_t byte2, uint8_t b
 //finds average voltage for each cell, then multiplies by the number of cells
 //in the pack
 float MAX14921::get_pack_voltage() {
-    total_pack_voltage = 0;
+    float total_pack_voltage = 0;
 
     for(int i = 0; i < NUM_PACKS; i++) {
-        spiTransfer24(pack_data[i].cs, pack_data[i].cell_balance, 0x00, 3 << 3);
+        spiTransfer24(pack_data[i].cs, pack_data[i].balance_byte1, pack_data[i].balance_byte2, 3 << 3);
 
         int16_t adc_val = ads1115[0].readADC_SingleEnded(0);
         total_pack_voltage += to_voltage(adc_val) * 16;
@@ -95,7 +108,10 @@ float MAX14921::get_pack_voltage() {
     Serial.print("Pack voltage: ");
     Serial.println(total_pack_voltage);
 
-    return total_pack_voltage;
+    total_pack_voltages.push(total_pack_voltage);
+    update_pack_average();
+
+    return average_pack_voltage;
 }
 
 
@@ -128,7 +144,7 @@ uint8_t MAX14921::under_voltage() {
 //checks to see if any cell in pack needs balancing
 uint8_t MAX14921::balancing() {
     for(int i = 0; i < NUM_PACKS; i++) {
-        if (pack_data[i].cell_balance > 0){
+        if (pack_data[i].balance_byte1 || pack_data[i].balance_byte2){
             return 1;
         }
     }
@@ -153,12 +169,17 @@ void MAX14921::balance_cells() {
                 pack_data[i].cell_balancing[j] = 0;
             }
         }
-        pack_data[i].cell_balance = 0;
+        pack_data[i].balance_byte1 = 0;
+        pack_data[i].balance_byte2 = 0;
         for(int j = 0; j < NUM_CELLS; j++) {
-            pack_data[i].cell_balance |= pack_data[i].cell_balancing[j] << j;
+            if(j / 8) {
+                pack_data[i].balance_byte2 |= pack_data[i].cell_balancing[j] << (j % 8);
+            } else {
+                pack_data[i].balance_byte1 |= pack_data[i].cell_balancing[j] << (j % 8);
+            }
         }
         //set balance to true if either pack needs balancing
-        spiTransfer24(pack_data[i].cs, pack_data[i].cell_balance, 0x00, 0x00);
+        spiTransfer24(pack_data[i].cs, pack_data[i].balance_byte1, pack_data[i].balance_byte2, 0x00);
     }
 }
 
@@ -166,16 +187,15 @@ void MAX14921::balance_cells() {
 void MAX14921::record_cell_voltages() {
     //sample bit set to hold, 100000
     for(int i = 0; i < NUM_PACKS; i++) {
-        spiTransfer24(pack_data[i].cs, pack_data[i].cell_balance, 0x00, 0x00);
+        spiTransfer24(pack_data[i].cs, pack_data[i].balance_byte1, pack_data[i].balance_byte2, 0x00);
         delay(CELL_SETTLING);
         //digitalWrite(SAMPLB_PIN, LOW);
 
         byte cell_select = 0;
         cell_select |= 1 << 5;
-        spiTransfer24(pack_data[i].cs, pack_data[i].cell_balance, 0x00, cell_select);
+        spiTransfer24(pack_data[i].cs, pack_data[i].balance_byte1, pack_data[i].balance_byte2, cell_select);
 
         delayMicroseconds(50);
-        delay(100);
 
         //spi: 0x00, 0x80, 0
 
@@ -184,7 +204,7 @@ void MAX14921::record_cell_voltages() {
             cell_select |= cell_num << 1;
             cell_select |= 1 << 5;
             
-            long return_data = spiTransfer24(pack_data[i].cs, pack_data[i].cell_balance, 0x00, cell_select);
+            long return_data = spiTransfer24(pack_data[i].cs, pack_data[i].balance_byte1, pack_data[i].balance_byte2, cell_select);
             delayMicroseconds(10);
             int16_t adc_val = ads1115[0].readADC_SingleEnded(0);
             //Serial.println(return_data);
@@ -200,7 +220,7 @@ void MAX14921::record_cell_voltages() {
     }
 
     //update values in cell average array
-    moving_average();
+    update_cell_average();
 }
 
 float MAX14921::get_cell_voltage(uint8_t pack, uint8_t cell) {

@@ -34,7 +34,8 @@ typedef struct {
     float cell_average_voltages[NUM_CELLS];
     CircularBuffer<float, CIRC_BUFF_LEN> cell_voltages[NUM_CELLS];
     int cell_balancing[NUM_CELLS];
-    int cell_balance = 0;
+    uint8_t balance_byte1 = 0;
+    uint8_t balance_byte2 = 0;
     uint8_t en;
     uint8_t cs;
 } pack_data_t;
@@ -54,10 +55,12 @@ class MAX14921 {
     private:
         Adafruit_ADS1115 ads1115[NUM_PACKS];
         ShiftRegister74HC595<1> sr = ShiftRegister74HC595<1>(SRLATCH, SRCLOCK, SRDATA);
-        float total_pack_voltage;
+        CircularBuffer<float, CIRC_BUFF_LEN> total_pack_voltages;
+        float average_pack_voltage;
         pack_data_t pack_data[NUM_PACKS];
         long spiTransfer24(int cs_pin, uint8_t byte1, uint8_t byte2, uint8_t byte3);
-        void moving_average();
+        void update_cell_average();
+        void update_pack_average();
 };
 
 float to_voltage(int adc_val);
