@@ -84,7 +84,8 @@
             divContainer.appendChild(table);
 
             //insert current
-            document.getElementById("current").innerHTML = "Current: " + data.at(-1);
+            document.getElementById("current").innerHTML = "Current: " + data.at(-2);
+            document.getElementById("pack_voltage").innerHTML = "Pack Voltage: " + data.at(-1);
     }
 
     </script>
@@ -94,6 +95,7 @@
         <tr>
             <td id="voltage"></td>
             <td id="current"></td>
+            <td id="pack_voltage"></td>
         </tr>
     </table>
 </body>

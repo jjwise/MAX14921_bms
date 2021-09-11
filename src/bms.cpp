@@ -14,15 +14,20 @@
 #include <MAX14921.h>
 #include <CAN.h>
 #include <CAN_evcc.h>
+// extern "C" {
+// #include "user_interface.h"
+// }
 
 #define AMP_GAIN 80
-#define MAX_CS1 27
-#define MAX_CS2 26
-#define MAX_EN1 2
-#define MAX_EN2 3
+#define MAX_CS1 26
+#define MAX_CS2 27
+#define MAX_EN1 3
+#define MAX_EN2 2
 #define SHUNT_ADC_ADDR 0x4B
 #define IGNITION_PIN 12 //also tdi
 #define PROXIMITY_PIN 13 //also tck
+#define WIFI_RETRIES 30
+
 
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
@@ -39,19 +44,70 @@ const size_t CAPACITY = JSON_ARRAY_SIZE(NUM_CELLS * 3);
 
 enum state{DRIVING, CHARGING, STANDBY} STATE;
 
-//isr run when there is a change on the ignition pin
-//changes state from standby->driving, driving->standby or charging->driving
-void ignition_interrupt() {
+uint8_t current_ignition_state = 0;
+
+bool wifi_off() {
+    int conn_tries = 0;
+
+    WiFi.disconnect(true, true);
+    WiFi.mode(WIFI_OFF);
+
+    while ((WiFi.status() == WL_CONNECTED)
+        && (conn_tries++ < WIFI_RETRIES)) {
+        delay(100);
+        #ifdef DEBUG
+            Serial.print('.');
+        #endif
+    }
+    if (WiFi.status() != WL_CONNECTED) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+
+bool wifi_on() {
+    int conn_tries = 0;
+
+    WiFi.softAP(ssid, password);
+
+    while ((WiFi.status() != WL_CONNECTED)
+        && (conn_tries++ < WIFI_RETRIES)) {
+        delay(100);
+        #ifdef DEBUG
+            Serial.print('.');
+        #endif
+    }
+    if (WiFi.status() == WL_CONNECTED) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+//polls ignition GPIO every 250ms, changes state from charging to driving 
+//if change from low -> high and vice versa. Tried to do with interrupt but
+//ignition is a bit bouncy and too tired to do debouncing.
+void poll_ignition() {
     uint8_t ignition_state = digitalRead(IGNITION_PIN);
-    Serial.printf("State change: %d -> ", STATE);
-    if(ignition_state) {
+    if(!current_ignition_state && ignition_state) {
+        Serial.printf("State change: %d -> ", STATE);
         STATE = DRIVING;
         max14921.wake();
-    } else {
-        STATE = STANDBY;
-        max14921.sleep();
+        wifi_on();
+        Serial.println(STATE);
+
+    } else if(current_ignition_state && !ignition_state) {
+        Serial.printf("State change: %d -> ", STATE);
+        //should be STANDBY, just for testing atm
+        STATE = CHARGING;
+        //max14921.sleep();
+        wifi_off();
+        Serial.println(STATE);
     }
-    Serial.println(STATE);
+
+    current_ignition_state = ignition_state; 
 }
 
 //j1772 charger is pluged in and on
@@ -79,13 +135,14 @@ float measure_current() {
 }
 
 //truncates float to specified width and dp, returns char pointer
-char * truncate_float(size_t width, uint8_t dp, float num) {
-    //use malloc cuase I can, static memory allocation is lame
-    float rounded_num = round(num * pow(10, dp)) / pow(10, dp);
-    char* temp_buff = (char *)malloc(width + 1); //allow for null byte
-    snprintf(temp_buff, width + 1, "%*f", width, rounded_num); 
-    return temp_buff;
-}
+//this function is dumb, why am I doing this?
+// char * truncate_float(size_t width, uint8_t dp, float num) {
+//     //use malloc cuase I can, static memory allocation is lame
+//     float rounded_num = round(num * pow(10, dp)) / pow(10, dp);
+//     char* temp_buff = (char *)malloc(width + 1); //allow for null byte
+//     snprintf(temp_buff, width + 1, "%*f", width, rounded_num); 
+//     return temp_buff;
+// }
 
 
 void send_data_ws() {
@@ -97,19 +154,30 @@ void send_data_ws() {
         for(int i = 0; i < NUM_CELLS; i++) {
 
             float cell_voltage = max14921.get_cell_voltage(j, i);
-            char *truncated_cell_voltage = truncate_float(4, 2, cell_voltage); 
-            cell_array.add(truncated_cell_voltage);
+            char cell_voltage_buff[10];
+            sprintf(cell_voltage_buff, "%.2f", cell_voltage);
+            cell_array.add(cell_voltage_buff);
+            // char *truncated_cell_voltage = truncate_float(4, 2, cell_voltage); 
+            // cell_array.add(truncated_cell_voltage);
 
-            free(truncated_cell_voltage);
+            // free(truncated_cell_voltage);
         }
     }
 
     float current = measure_current();
-    char *truncated_current = truncate_float(7, 2, current); 
-    cell_array.add(truncated_current);
-    free(truncated_current);
+    char current_buff[10];
+    sprintf(current_buff, "%.2f", current);
+    cell_array.add(current_buff);
+    // char *truncated_current = truncate_float(7, 2, current); 
+    // cell_array.add(truncated_current);
+    // free(truncated_current);
+
+    float pack_voltage = max14921.get_pack_voltage();
+    char pack_voltage_buff[10];
+    sprintf(pack_voltage_buff, "%.2f", pack_voltage);
+    cell_array.add(pack_voltage_buff);
     
-    //don't actually need 200 chars, more like 128
+    //don't actually need 300 chars
     char buff[300];
     serializeJson(doc, buff);
     
@@ -151,16 +219,18 @@ void setup() {
     SPI.begin();//sets cs to output and pull high
     max14921.begin();
     shunt_adc.begin(SHUNT_ADC_ADDR);
-
+    
     if (!CAN.begin(CAN_RATE)) {
+        #ifdef DEBUG
         Serial.println("Starting CAN failed!");
+        #endif
         while (1);
     }
 
     CAN.setPins(CAN_RX, CAN_TX); //rx tx
 
     //interrupts on pins for state changes
-    attachInterrupt(IGNITION_PIN, ignition_interrupt, CHANGE);
+    //attachInterrupt(IGNITION_PIN, ignition_interrupt, CHANGE);
     attachInterrupt(PROXIMITY_PIN, proximity_interrupt, CHANGE);
 
     ledcSetup(CHANNEL, FREQ, RESOLUTION);
@@ -169,11 +239,15 @@ void setup() {
     WiFi.softAP(ssid, password);
 
     IPAddress IP = WiFi.softAPIP();
+    #ifdef DEBUG
     Serial.print("AP IP address: ");
     Serial.println(IP);
+    #endif
 
     if (MDNS.begin("esp32")) {
+        #ifdef DEBUG
         Serial.println("MDNS responder started");
+        #endif
     }
 
     MDNS.addService("http", "tcp", 80);
@@ -202,8 +276,8 @@ void setup() {
 
     server.begin(); 
 
-    STATE = STANDBY;
-    max14921.sleep();
+    STATE = DRIVING;
+    //max14921.sleep();
 }
 
 //put max14921 into smaple phase
@@ -216,8 +290,6 @@ void loop() {
         pack_voltage = max14921.get_pack_voltage();
         max14921.record_cell_voltages();
         //send bms data to client through websocket
-        send_data_ws();
-        Serial.println("hello");
     }
     
     //is there a way to combine if above ^ with switch below??
@@ -225,11 +297,13 @@ void loop() {
         case DRIVING: {
             int battery_percent = voltage_to_percentage(pack_voltage);
             set_battery_guage(battery_percent);
+            send_data_ws();
         } break;
         case CHARGING: {
             //balance cells to avoid individual cell overcharging
             max14921.balance_cells();
             set_bms_status(&bms_status, &max14921);
+            //send can message at least once a second
             send_can_evcc(&bms_status);
         } break;
         case STANDBY: {
@@ -237,6 +311,7 @@ void loop() {
         } break;
     }
 
-    //send can message at least once a second, do it twice to be sure
+    poll_ignition();
+
     delay(250);
 }

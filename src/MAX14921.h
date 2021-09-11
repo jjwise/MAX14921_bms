@@ -10,23 +10,29 @@ and pack voltages, interfacing with the max14921 over spi and balancing cells
 #include <ShiftRegister74HC595.h>
 #include <CircularBuffer.h>
 
+#define DEBUG
+
 #define MOSI 11 
 #define MISO 23    
 #define SPICLK 18
-#define SAMPLB_PIN 13
 #define SRLATCH 32
 #define SRCLOCK 33
 #define SRDATA 2
-#define DATA_ORDER LSBFIRST
+#define DATA_ORDER MSBFIRST
 #define SPI_MODE SPI_MODE0
+#define CELL_SELECT 1 << 7
+#define SAMPLB 1 << 2
+#define LOW_POWER 0x01
+#define HOLD_SETTLING 60 //in useconds
+#define LEVEL_SHIFT_DELAY 50 // in useconds
 #define ADC_CONST 6.144 * 2 / pow(2, 16)
 #define NUM_PACKS 2
 #define CIRC_BUFF_LEN 20
 
-const int ADC_ADDR[NUM_PACKS] = {0x48, 0x48};
+const int ADC_ADDR[NUM_PACKS] = {0x48, 0x49};
 const float CELL_THRESH_UPPER = 4.15;
 const float CELL_THRESH_LOWER = 3.4;
-const int SPI_MAX_RATE = 1000000;
+const int SPI_MAX_RATE = 500000;
 const int8_t NUM_CELLS = 15;
 const int8_t CELL_SETTLING = 60;
 
@@ -56,7 +62,7 @@ class MAX14921 {
         void wake();
     private:
         Adafruit_ADS1115 ads1115[NUM_PACKS];
-        ShiftRegister74HC595<1> sr = ShiftRegister74HC595<1>(SRLATCH, SRCLOCK, SRDATA);
+        ShiftRegister74HC595<1> sr = ShiftRegister74HC595<1>(SRDATA, SRCLOCK, SRLATCH);
         CircularBuffer<float, CIRC_BUFF_LEN> total_pack_voltages;
         float average_pack_voltage;
         pack_data_t pack_data[NUM_PACKS];
