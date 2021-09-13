@@ -20,10 +20,10 @@ and pack voltages, interfacing with the max14921 over spi and balancing cells
 #define SRDATA 2
 #define DATA_ORDER MSBFIRST
 #define SPI_MODE SPI_MODE0
-#define CELL_SELECT 1 << 7
-#define SAMPLB 1 << 2
+#define CELL_SELECT 0x80
+#define SAMPLB 0x04
 #define LOW_POWER 0x01
-#define HOLD_SETTLING 60 //in useconds
+#define HOLD_SETTLING 10 //in useconds
 #define LEVEL_SHIFT_DELAY 50 // in useconds
 #define ADC_CONST 6.144 * 2 / pow(2, 16)
 #define NUM_PACKS 2

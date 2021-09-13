@@ -208,12 +208,11 @@ void MAX14921::record_cell_voltages() {
         spiTransfer24(pack_data[i].cs, pack_data[i].balance_byte1, pack_data[i].balance_byte2, 0x00);
         delay(CELL_SETTLING);
 
-        for(uint8_t cell_num = NUM_CELLS - 1; cell_num >= 0; cell_num--){
-            byte sample_cell = CELL_SELECT | cell_num << 3 | SAMPLB;
-            
+        for(uint16_t cell_num = 0; cell_num < NUM_CELLS; cell_num++){
+            uint16_t sample_cell = CELL_SELECT | (cell_num << 3) | SAMPLB;
             //hold cell voltage for reading
             long return_data = spiTransfer24(pack_data[i].cs, pack_data[i].balance_byte1, pack_data[i].balance_byte2, sample_cell);
-            delayMicroseconds(HOLD_SETTLING);
+            delayMicroseconds(LEVEL_SHIFT_DELAY);
             int16_t adc_val = ads1115[i].readADC_SingleEnded(0);
             //delay for a bit
             delayMicroseconds(10);
@@ -222,7 +221,7 @@ void MAX14921::record_cell_voltages() {
             if(return_data & 0xFF) {
                 Serial.println("Cell above or below threshold voltage");
             }
-            #endif DEBUG
+            #endif
 
             //turn float voltage into truncated char array
             float cell_voltage = to_voltage(adc_val);

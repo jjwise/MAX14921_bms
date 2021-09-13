@@ -18,7 +18,7 @@
 // #include "user_interface.h"
 // }
 
-#define AMP_GAIN 80
+#define ISO_GAIN 8.2
 #define MAX_CS1 26
 #define MAX_CS2 27
 #define MAX_EN1 3
@@ -39,7 +39,7 @@ bms_status_t bms_status;
 
 const char *ssid = "Ute";
 const char *password = NULL;
-const int SHUNT_RESISTANCE = 150; //in u ohms
+const int SHUNT_RESISTANCE = 125; //in u ohms
 const size_t CAPACITY = JSON_ARRAY_SIZE(NUM_CELLS * 3);
 
 enum state{DRIVING, CHARGING, STANDBY} STATE;
@@ -129,20 +129,10 @@ float measure_current() {
     //read adc voltage at current sense pin, convert to current
     //use instance of adc associated with corect address
     long adc_value = shunt_adc.readADC_Differential_2_3();
-    float current = to_voltage(adc_value) / SHUNT_RESISTANCE * 1000000 / AMP_GAIN; // some maths
+    float current = to_voltage(adc_value) / SHUNT_RESISTANCE * 1000000 / ISO_GAIN; // some maths
 
     return current;
 }
-
-//truncates float to specified width and dp, returns char pointer
-//this function is dumb, why am I doing this?
-// char * truncate_float(size_t width, uint8_t dp, float num) {
-//     //use malloc cuase I can, static memory allocation is lame
-//     float rounded_num = round(num * pow(10, dp)) / pow(10, dp);
-//     char* temp_buff = (char *)malloc(width + 1); //allow for null byte
-//     snprintf(temp_buff, width + 1, "%*f", width, rounded_num); 
-//     return temp_buff;
-// }
 
 
 void send_data_ws() {
@@ -157,10 +147,6 @@ void send_data_ws() {
             char cell_voltage_buff[10];
             sprintf(cell_voltage_buff, "%.2f", cell_voltage);
             cell_array.add(cell_voltage_buff);
-            // char *truncated_cell_voltage = truncate_float(4, 2, cell_voltage); 
-            // cell_array.add(truncated_cell_voltage);
-
-            // free(truncated_cell_voltage);
         }
     }
 
@@ -168,9 +154,6 @@ void send_data_ws() {
     char current_buff[10];
     sprintf(current_buff, "%.2f", current);
     cell_array.add(current_buff);
-    // char *truncated_current = truncate_float(7, 2, current); 
-    // cell_array.add(truncated_current);
-    // free(truncated_current);
 
     float pack_voltage = max14921.get_pack_voltage();
     char pack_voltage_buff[10];
