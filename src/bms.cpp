@@ -259,7 +259,7 @@ void setup() {
 
     server.begin(); 
 
-    STATE = DRIVING;
+    STATE = CHARGING;
     //max14921.sleep();
 }
 
@@ -272,6 +272,7 @@ void loop() {
     if (STATE == DRIVING || STATE == CHARGING) {
         pack_voltage = max14921.get_pack_voltage();
         max14921.record_cell_voltages();
+
         //send bms data to client through websocket
     }
     

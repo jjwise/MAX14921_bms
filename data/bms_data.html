@@ -23,6 +23,7 @@
         "use strict";
         var ws;
         var data;
+        var HP_CONVERSION = 745.69987;
         $(document).ready(function() {
             // create websocket instance
             ws = new WebSocket('ws://' + location.hostname + '/ws', ['arduino']);
@@ -68,7 +69,7 @@
             }
 
             // ADD JSON DATA TO THE TABLE AS ROWS.
-            for (var i = 0; i < data.length - 1; i++) {
+            for (var i = 0; i < data.length - 2; i++) {
                 tr = table.insertRow(-1);
                 
                 var tabCell = tr.insertCell(-1);
@@ -84,8 +85,12 @@
             divContainer.appendChild(table);
 
             //insert current
-            document.getElementById("current").innerHTML = "Current: " + data.at(-2);
-            document.getElementById("pack_voltage").innerHTML = "Pack Voltage: " + data.at(-1);
+            document.getElementById("current").innerHTML = "Current (A): " + data.at(-2);
+            document.getElementById("pack_voltage").innerHTML = "Pack Voltage (V): " + data.at(-1);
+
+            var horse_power = (data.at(-1) * data.at(-2)) / HP_CONVERSION;
+            horse_power = Math.round(horse_power * 100) / 100;
+            document.getElementById("power").innerHTML = "Power (HP): " + horse_power;
     }
 
     </script>
@@ -94,8 +99,13 @@
     <table class="main">
         <tr>
             <td id="voltage"></td>
-            <td id="current"></td>
-            <td id="pack_voltage"></td>
+            <td>
+                <table class="main"></table>
+                    <tr id="current"></tr>
+                    <tr id="pack_voltage"></tr>
+                    <tr id="power"></tr>
+                </table>
+            </td>
         </tr>
     </table>
 </body>
