@@ -12,31 +12,34 @@ and pack voltages, interfacing with the max14921 over spi and balancing cells
 
 #define DEBUG
 
-#define MOSI 11 
-#define MISO 23    
-#define SPICLK 18
-#define SRLATCH 32
-#define SRCLOCK 33
-#define SRDATA 2
-#define DATA_ORDER MSBFIRST
+#define DATA_ORDER LSBFIRST
 #define SPI_MODE SPI_MODE0
-#define CELL_SELECT 0x80
-#define SAMPLB 0x04
-#define LOW_POWER 0x01
-#define HOLD_SETTLING 10 //in useconds
-#define LEVEL_SHIFT_DELAY 50 // in useconds
+#define CELL_SELECT 0x01
+#define SAMPLB 0x20
+#define LOW_POWER 0x80
 #define ADC_CONST 6.144 * 2 / pow(2, 16)
-#define NUM_PACKS 2
-#define CIRC_BUFF_LEN 20
-#define AOUT_SETTLING 5 // in useconds
-#define PACK_VOLTAGE_SETTLING 50 // in useconds
 
-const int ADC_ADDR[NUM_PACKS] = {0x48, 0x49};//{0x48, 0x49};
-const float CELL_THRESH_UPPER = 5.5;
+const uint8_t MOSI_PIN = 11;
+const uint8_t MISO_PIN = 23;    
+const uint8_t SPICLK = 18;
+const uint8_t SRLATCH = 32;
+const uint8_t SRCLOCK = 33;
+const uint8_t SRDATA = 2;
+
+const uint8_t HOLD_SETTLING = 10; //in useconds
+const uint8_t LEVEL_SHIFT_DELAY = 50; // in useconds
+
+const uint8_t NUM_PACKS = 2;
+const uint8_t CIRC_BUFF_LEN = 20;
+const uint8_t AOUT_SETTLING = 5; // in useconds
+const uint8_t PACK_VOLTAGE_SETTLING = 50; // in useconds
+
+const int ADC_ADDR[NUM_PACKS] = {0x48, 0x49};
+const float CELL_THRESH_UPPER = 4.1;
 const float CELL_THRESH_LOWER = 3.4;
-const int SPI_MAX_RATE = 500000;
-const int8_t NUM_CELLS = 15;
-const int8_t CELL_SETTLING = 60;
+const int SPI_MAX_RATE = 50000;
+const uint8_t NUM_CELLS = 15;
+const uint8_t CELL_SETTLING = 60;
 
 typedef struct {
     float cell_average_voltages[NUM_CELLS];
@@ -62,6 +65,7 @@ class MAX14921 {
         uint8_t over_temp();
         void sleep();
         void wake();
+        void reset_balance();
     private:
         Adafruit_ADS1115 ads1115[NUM_PACKS];
         ShiftRegister74HC595<1> sr = ShiftRegister74HC595<1>(SRDATA, SRCLOCK, SRLATCH);

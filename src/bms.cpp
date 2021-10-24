@@ -18,15 +18,16 @@
 // #include "user_interface.h"
 // }
 
-#define ISO_GAIN 8.2
-#define MAX_CS1 26
-#define MAX_CS2 27
-#define MAX_EN1 3
-#define MAX_EN2 2
 #define SHUNT_ADC_ADDR 0x4B
-#define IGNITION_PIN 12 //also tdi
-#define PROXIMITY_PIN 13 //also tck
-#define WIFI_RETRIES 30
+
+const float ISO_GAIN = 8.2;
+const uint8_t MAX_CS1 = 26;
+const uint8_t MAX_CS2 = 27;
+const uint8_t MAX_EN1 = 3;
+const uint8_t MAX_EN2 = 2;
+const uint8_t IGNITION_PIN = 12; //also tdi
+const uint8_t CHARGE_PIN = 13; //also tck
+const uint8_t WIFI_RETRIES = 30;
 
 
 AsyncWebServer server(80);
@@ -45,6 +46,7 @@ const size_t CAPACITY = JSON_ARRAY_SIZE(NUM_CELLS * 3);
 enum state{DRIVING, CHARGING, STANDBY} STATE;
 
 uint8_t current_ignition_state = 0;
+uint8_t current_charge_state = 1; //inverse for off
 
 bool wifi_off() {
     int conn_tries = 0;
@@ -95,14 +97,14 @@ void poll_ignition() {
         Serial.printf("State change: %d -> ", STATE);
         STATE = DRIVING;
         max14921.wake();
+        max14921.reset_balance();
         wifi_on();
         Serial.println(STATE);
 
     } else if(current_ignition_state && !ignition_state) {
         Serial.printf("State change: %d -> ", STATE);
-        //should be STANDBY, just for testing atm
-        STATE = CHARGING;
-        //max14921.sleep();
+        STATE = STANDBY;
+        max14921.sleep();
         wifi_off();
         Serial.println(STATE);
     }
@@ -110,20 +112,43 @@ void poll_ignition() {
     current_ignition_state = ignition_state; 
 }
 
-//j1772 charger is pluged in and on
-void proximity_interrupt() {
-    uint8_t proximity_state = digitalRead(PROXIMITY_PIN);
-
-    Serial.printf("State change: %d -> ", STATE);
-    if(proximity_state) {
+void poll_charge() {
+    uint8_t charge_state = digitalRead(CHARGE_PIN);
+    //charge active pin driven low
+    if(current_charge_state && !charge_state) {
+        Serial.printf("State change: %d -> ", STATE);
         STATE = CHARGING;
         max14921.wake();
-    } else {
+        wifi_on();
+        Serial.println(STATE);
+
+    } else if(!current_charge_state && charge_state) {
+        Serial.printf("State change: %d -> ", STATE);
         STATE = STANDBY;
         max14921.sleep();
+        wifi_off();
+        Serial.println(STATE);
     }
-    Serial.println(STATE);
+
+    current_charge_state = charge_state; 
 }
+
+//j1772 charger is pluged in and on
+// void charge_interrupt() {
+//     uint8_t charge_state = digitalRead(CHARGE_PIN);
+
+//     Serial.printf("State change: %d -> ", STATE);
+//     if(!charge_state) {
+//         STATE = CHARGING;
+//         max14921.wake();
+//         wifi_on();
+//     } else {
+//         STATE = STANDBY;
+//         max14921.sleep();
+//         wifi_off();
+//     }
+//     Serial.println(STATE);
+// }
 
 float measure_current() {
     //read adc voltage at current sense pin, convert to current
@@ -211,10 +236,12 @@ void setup() {
     }
 
     CAN.setPins(CAN_RX, CAN_TX); //rx tx
+    pinMode(CHARGE_PIN, INPUT);
+    pinMode(IGNITION_PIN, INPUT);
 
     //interrupts on pins for state changes
     //attachInterrupt(IGNITION_PIN, ignition_interrupt, CHANGE);
-    attachInterrupt(PROXIMITY_PIN, proximity_interrupt, CHANGE);
+    //attachInterrupt(CHARGE_PIN, charge_interrupt, CHANGE);
 
     ledcSetup(CHANNEL, FREQ, RESOLUTION);
     ledcAttachPin(GUAGE_PIN, CHANNEL);
@@ -259,20 +286,22 @@ void setup() {
 
     server.begin(); 
 
-    STATE = CHARGING;
-    //max14921.sleep();
+    //STATE = CHARGING;
+    //STATE = DRIVING;
+    STATE = STANDBY;
+    max14921.sleep();
 }
 
 //put max14921 into smaple phase
 //give caps some time to settle at cell voltage, 500ms is definitely too much
 //read voltages and send to client over websockets
 void loop() {
+    //need a loop output going to evcc that checks for cell under/overvoltage
     float pack_voltage = 0;
 
     if (STATE == DRIVING || STATE == CHARGING) {
         pack_voltage = max14921.get_pack_voltage();
         max14921.record_cell_voltages();
-
         //send bms data to client through websocket
     }
     
@@ -280,7 +309,9 @@ void loop() {
     switch(STATE) {
         case DRIVING: {
             int battery_percent = voltage_to_percentage(pack_voltage);
-            set_battery_guage(battery_percent);
+            bool undervolt = max14921.under_voltage();
+            //set battery guage to 0 if a single cell is under the lower threshold
+            set_battery_guage(battery_percent * !undervolt);
             send_data_ws();
         } break;
         case CHARGING: {
@@ -288,7 +319,7 @@ void loop() {
             max14921.balance_cells();
             set_bms_status(&bms_status, &max14921);
             //send can message at least once a second
-            send_can_evcc(&bms_status);
+            //send_can_evcc(&bms_status);
         } break;
         case STANDBY: {
             //low power mode
@@ -296,6 +327,7 @@ void loop() {
     }
 
     poll_ignition();
+    poll_charge();
 
     delay(250);
 }

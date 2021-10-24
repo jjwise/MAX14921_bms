@@ -41,8 +41,11 @@ void MAX14921::begin() {
 
 void MAX14921::sleep() {
     for(int i = 0; i < NUM_PACKS; i++){
-        sr.set(pack_data[i].en, LOW);
+        spiTransfer24(pack_data[i].cs, 0x00, 0x00, 0x03 << 3);
+        delay(10);
         spiTransfer24(pack_data[i].cs, 0x00, 0x00, LOW_POWER);
+        delay(10);
+        sr.set(pack_data[i].en, LOW);
     }
 }
 
@@ -51,6 +54,14 @@ void MAX14921::wake() {
     for(int i = 0; i < NUM_PACKS; i++){
         sr.set(pack_data[i].en, HIGH);
         spiTransfer24(pack_data[i].cs, 0x00, 0x00, 0x03 << 3);
+        spiTransfer24(pack_data[i].cs, 0x00, 0x00, 0x03 << 3);
+    }
+}
+
+void MAX14921::reset_balance() {
+    for(int i = 0; i < NUM_PACKS; i++){
+        pack_data[i].balance_byte1 = 0;
+        pack_data[i].balance_byte2 = 0;
     }
 }
 
@@ -118,11 +129,6 @@ float MAX14921::get_pack_voltage() {
         spiTransfer24(pack_data[i].cs, pack_data[i].balance_byte1, pack_data[i].balance_byte2, 0x03 << 3);
         delayMicroseconds(PACK_VOLTAGE_SETTLING);
 
-        //dummy reads
-        for(int j = 0; j < 5; j++) {
-            ads1115[i].readADC_SingleEnded(0);
-        }
-
         int16_t adc_val = ads1115[i].readADC_SingleEnded(0); 
         total_pack_voltage += to_voltage(adc_val) * 16;
     }
@@ -187,7 +193,7 @@ void MAX14921::balance_cells() {
     //uses previously calculated cell voltages to determine if a particular cell needs to be blanced
     for(int i = 0; i < NUM_PACKS; i++) {
         for(uint8_t j = 0; j < NUM_CELLS; j++) {
-            if (pack_data[i].cell_average_voltages[j] >= CELL_THRESH_UPPER) {
+            if (pack_data[i].cell_average_voltages[j] >= CELL_THRESH_UPPER && j != 12 && j != 13) {
                 pack_data[i].cell_balancing[j] = 1;
             } else {
                 pack_data[i].cell_balancing[j] = 0;
@@ -197,12 +203,14 @@ void MAX14921::balance_cells() {
         pack_data[i].balance_byte2 = 0;
         for(uint8_t j = 0; j < NUM_CELLS; j++) {
             if(j / 8) {
-                pack_data[i].balance_byte2 |= pack_data[i].cell_balancing[j] << (7 - (j % 8));
+                pack_data[i].balance_byte2 |= pack_data[i].cell_balancing[j] << (j % 8);
             } else {
-                pack_data[i].balance_byte1 |= pack_data[i].cell_balancing[j] << (7 - (j % 8));
+                pack_data[i].balance_byte1 |= pack_data[i].cell_balancing[j] << (j % 8);
             }
+            
         }
         //set balance to true if either pack needs balancing
+        spiTransfer24(pack_data[i].cs, pack_data[i].balance_byte1, pack_data[i].balance_byte2, 0x03 << 3);
         spiTransfer24(pack_data[i].cs, pack_data[i].balance_byte1, pack_data[i].balance_byte2, 0x03 << 3);
     }
 }
@@ -220,16 +228,13 @@ void MAX14921::record_cell_voltages() {
         delayMicroseconds(LEVEL_SHIFT_DELAY);
 
         //should be read out from top of stack down but oh well
-        for(byte cell_num = 0; cell_num < NUM_CELLS; cell_num++){
-            byte sample_cell = CELL_SELECT | (cell_num << 3) | SAMPLB;
+        for(uint8_t cell_num = 0; cell_num < NUM_CELLS; cell_num++){
+
+            byte sample_cell = CELL_SELECT | (cell_num << 1) | SAMPLB;
             //hold cell voltage for reading
             long return_data = spiTransfer24(pack_data[i].cs, pack_data[i].balance_byte1, pack_data[i].balance_byte2, sample_cell);
             delayMicroseconds(AOUT_SETTLING * 2);
 
-            //5 dummy reads
-            for(int j = 0; j < 5; j++) {
-                ads1115[i].readADC_SingleEnded(0);
-            }
             int16_t adc_val = ads1115[i].readADC_SingleEnded(0);
 
             #ifdef DEBUG
@@ -240,12 +245,16 @@ void MAX14921::record_cell_voltages() {
 
             //turn float voltage into truncated char array
             float cell_voltage = to_voltage(adc_val);
-            pack_data[i].cell_voltages[cell_num].push(cell_voltage);
+            //unsafe hack to stop weird stuff will cell 13
+            if(cell_num == 12 || cell_num == 13) {
+                pack_data[i].cell_voltages[cell_num].push(pack_data[i].cell_voltages[11].last());
+            } else {
+                pack_data[i].cell_voltages[cell_num].push(cell_voltage);
+            }
+            
             //Serial.println(cell_voltage);
         }
     }
-
-    
 
     //update values in cell average array
     update_cell_average();
